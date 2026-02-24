@@ -20,6 +20,7 @@ from pathlib import Path
 from todo import Todo
 from today import DiaryDate
 from todo.plan import cmd_plan, get_default_files
+from todo.defaults import default_files
 
 
 def read_files_from_stdin() -> list[str]:
@@ -54,10 +55,16 @@ def parse_args() -> tuple[str, list[str]]:
             return command, []  # direct mode
         return command, []
 
-    files = read_files_from_stdin()
+    if not sys.stdin.isatty():
+        files = read_files_from_stdin()
+    else:
+        files = []
 
     if not files:
-        print("Error: No files provided via stdin", file=sys.stderr)
+        files = default_files(command)
+
+    if not files:
+        print("Error: No files provided via stdin and no defaults available", file=sys.stderr)
         sys.exit(1)
 
     return command, files
@@ -282,9 +289,9 @@ def main():
             line_number = sys.argv[3]
             cmd_done_direct(file_path, line_number)
         else:  # interactive mode
-            files_interactive = read_files_from_stdin() if not files else files
+            files_interactive = files or default_files('done')
             if not files_interactive:
-                print("Error: No files provided via stdin for interactive done", file=sys.stderr)
+                print("Error: No files available for interactive done", file=sys.stderr)
                 sys.exit(1)
             cmd_done_interactive(files_interactive)
     elif command == 'plan':
