@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from todo import Todo
 from today import DiaryDate
+from todo.plan import cmd_plan, get_default_files
 
 
 def read_files_from_stdin() -> list[str]:
@@ -37,13 +38,14 @@ def parse_args() -> tuple[str, list[str]]:
         print("Usage: <files> | todo <command>", file=sys.stderr)
         print("       todo add <text>", file=sys.stderr)
         print("       todo done [<file_path> <line_number>]", file=sys.stderr)
-        print("Commands: get, show, edit, add, done", file=sys.stderr)
+        print("       todo plan", file=sys.stderr)
+        print("Commands: get, show, edit, add, done, plan", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1].lower()
 
-    # 'add' and direct 'done' don't require stdin
-    if command in ('add', 'done'):
+    # 'add', 'done', and 'plan' don't require stdin
+    if command in ('add', 'done', 'plan'):
         if command == 'add' and len(sys.argv) < 3:
             print("Usage: todo add <text>", file=sys.stderr)
             sys.exit(1)
@@ -285,9 +287,18 @@ def main():
                 print("Error: No files provided via stdin for interactive done", file=sys.stderr)
                 sys.exit(1)
             cmd_done_interactive(files_interactive)
+    elif command == 'plan':
+        if not sys.stdin.isatty():
+            plan_files = read_files_from_stdin()
+        else:
+            plan_files = get_default_files()
+        if not plan_files:
+            print("No files found to plan from", file=sys.stderr)
+            sys.exit(1)
+        cmd_plan(plan_files)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Commands: get, show, edit, add, done", file=sys.stderr)
+        print("Commands: get, show, edit, add, done, plan", file=sys.stderr)
         sys.exit(1)
 
 
