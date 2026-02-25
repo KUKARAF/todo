@@ -178,11 +178,13 @@ def cmd_plan(files: list[str]) -> None:
 
     set_frontmatter_plan(target_path)
 
-    # Append suggested plan from estimate prompt
-    result = subprocess.run(
-        [estimate_cmd],
-        capture_output=True, text=True,
-    )
+    # Append suggested plan from estimate prompt (stdin from tty for interactive input)
+    with open('/dev/tty') as tty:
+        result = subprocess.run(
+            [estimate_cmd],
+            stdin=tty, stdout=subprocess.PIPE, stderr=None,
+            text=True,
+        )
     if result.returncode == 0 and result.stdout.strip():
         with open(target_path, 'a', encoding='utf-8') as f:
             f.write('\n# suggested plan\n')
