@@ -2,8 +2,8 @@
 Plan command: consolidate incomplete tasks into today's file.
 
 Usage:
-    today | todo plan       # Plan from today's file(s)
-    week | todo plan        # Plan from this week's files
+    diary | todo plan       # Plan from today's file(s)
+    diary week | todo plan  # Plan from this week's files
     todo plan               # Default: plan from last 3 days
 """
 

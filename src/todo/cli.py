@@ -2,10 +2,10 @@
 CLI tool for managing todos from markdown files.
 
 Usage:
-    today | todo get                          # Show todos due today or overdue
-    today | todo edit                         # Open files in default editor
-    week | todo show                          # Print all todos from week
-    today | todo done                         # Interactive (fzf) mark done
+    diary | todo get                          # Show todos due today or overdue
+    diary | todo edit                         # Open files in default editor
+    diary week | todo show                    # Print all todos from week
+    diary | todo done                         # Interactive (fzf) mark done
     todo add "task text #tag @location"       # Add new todo (uses today's file by default)
     todo add "task due:tomorrow #tag"         # Add todo with custom due date
     todo done path/to/file.md 42              # Directly mark line 42 in file as done

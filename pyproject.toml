@@ -1,9 +1,9 @@
 [project]
 name = "todo"
-version = "0.1.4"
+version = "0.1.5"
 requires-python = ">=3.11"
 dependencies = [
-    "today @ git+https://github.com/KUKARAF/today.git",
+    "today @ git+https://github.com/KUKARAF/diary.git",
     "timefhuman",
 ]
 
