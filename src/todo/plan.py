@@ -87,6 +87,7 @@ def _collect_tasks(files: list[str], target_resolved: str) -> tuple[list[str], d
     """Collect open/partial tasks from files, skipping the target file.
 
     Returns (tasks_to_add, files_to_rewrite).
+    files_to_rewrite maps file_path -> (original_lines, indices_to_remove, indices_to_mark_done).
     """
     tasks_to_add = []
     files_to_rewrite = {}
@@ -102,6 +103,7 @@ def _collect_tasks(files: list[str], target_resolved: str) -> tuple[list[str], d
             lines = f.readlines()
 
         lines_to_remove = []
+        lines_to_mark_done = []
 
         for idx, line in enumerate(lines):
             task_type = classify_task(line)
@@ -110,22 +112,31 @@ def _collect_tasks(files: list[str], target_resolved: str) -> tuple[list[str], d
                 lines_to_remove.append(idx)
             elif task_type == 'partial':
                 tasks_to_add.append(line.rstrip('\n'))
+                lines_to_mark_done.append(idx)
 
-        if lines_to_remove:
-            files_to_rewrite[file_path] = (lines, lines_to_remove)
+        if lines_to_remove or lines_to_mark_done:
+            files_to_rewrite[file_path] = (lines, lines_to_remove, lines_to_mark_done)
 
     return tasks_to_add, files_to_rewrite
 
 
 def _write_tasks(target_path: Path, tasks: list[str], files_to_rewrite: dict) -> None:
-    """Append tasks to target file and remove moved tasks from source files."""
+    """Append tasks to target file, remove open tasks and mark partial tasks done in sources."""
     with open(target_path, 'a', encoding='utf-8') as f:
         for task in tasks:
             f.write(task + '\n')
 
-    for file_path, (lines, remove_indices) in files_to_rewrite.items():
+    for file_path, (lines, remove_indices, mark_done_indices) in files_to_rewrite.items():
         remove_set = set(remove_indices)
-        new_lines = [line for idx, line in enumerate(lines) if idx not in remove_set]
+        mark_done_set = set(mark_done_indices)
+        new_lines = []
+        for idx, line in enumerate(lines):
+            if idx in remove_set:
+                continue
+            if idx in mark_done_set:
+                new_lines.append(re.sub(r'^(\s*[-*]\s+)\[.\]', r'\1[x]', line))
+            else:
+                new_lines.append(line)
 
         path = Path(file_path)
         tmp_path = path.with_suffix(path.suffix + '.tmp')
@@ -146,6 +157,10 @@ def cmd_plan(files: list[str]) -> None:
         target_path = diary.filepath(now + timedelta(days=1), create=True)
         estimate_cmd = "estimate_tomorrow.prompt"
         label = "tomorrow"
+        # Include today as a source so unfinished tasks move to tomorrow
+        today_str = str(today_path)
+        if today_str not in files:
+            files = files + [today_str]
     else:
         target_path = today_path
         estimate_cmd = "estimate_today.prompt"
@@ -155,13 +170,11 @@ def cmd_plan(files: list[str]) -> None:
 
     tasks_to_add, files_to_rewrite = _collect_tasks(files, target_resolved)
 
-    if not tasks_to_add:
-        print(f"No tasks to plan for {label}")
-        return
-
-    _write_tasks(target_path, tasks_to_add, files_to_rewrite)
-
-    print(f"\U0001f4cb Planned {len(tasks_to_add)} task(s) for {label} ({target_path.name})")
+    if tasks_to_add:
+        _write_tasks(target_path, tasks_to_add, files_to_rewrite)
+        print(f"\U0001f4cb Planned {len(tasks_to_add)} task(s) for {label} ({target_path.name})")
+    else:
+        print(f"No tasks to move for {label}")
 
     set_frontmatter_plan(target_path)
 
