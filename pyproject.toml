@@ -9,6 +9,7 @@ dependencies = [
 
 [project.scripts]
 todo = "todo.cli:main"
+distracted = "todo.distracted:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true

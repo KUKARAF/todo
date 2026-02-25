@@ -103,5 +103,17 @@ def cmd_plan(files: list[str]) -> None:
 
     print(f"\U0001f4cb Planned {len(tasks_to_add)} task(s) for today ({today_path.name})")
 
+    # Append suggested plan from estimate_today.prompt (includes calendar events)
+    result = subprocess.run(
+        ["estimate_today.prompt"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        with open(today_path, 'a', encoding='utf-8') as f:
+            f.write('\n# suggested plan\n')
+            f.write(result.stdout)
+    else:
+        print("No suggested plan (or estimate_today.prompt failed)")
+
     # Open today's file in editor
     subprocess.run("today | todo edit", shell=True)
