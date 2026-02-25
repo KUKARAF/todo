@@ -49,20 +49,53 @@ def classify_task(line: str) -> str | None:
         return 'partial'
 
 
-def cmd_plan(files: list[str]) -> None:
-    """Move open tasks and copy partial tasks into today's file, then open editor."""
-    diary = DiaryDate()
-    today_path = diary.filepath(datetime.now(), create=True)
-    today_resolved = str(today_path.resolve())
+def has_plan(path: Path) -> bool:
+    """Check if plan: true is set in the YAML frontmatter."""
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return False
+    try:
+        end = text.index("\n---\n", 4)
+    except ValueError:
+        return False
+    front = text[4:end]
+    return bool(re.search(r"^plan:\s*true\s*$", front, re.MULTILINE))
 
+
+def set_frontmatter_plan(path: Path) -> None:
+    """Set plan: true in the YAML frontmatter of the given file."""
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+
+    if text.startswith("---\n"):
+        end = text.index("\n---\n", 4)
+        front = text[4:end]
+        rest = text[end + 5:]
+
+        if re.search(r"^plan:", front, re.MULTILINE):
+            front = re.sub(r"^plan:.*$", "plan: true", front, flags=re.MULTILINE)
+        else:
+            front = front.rstrip("\n") + "\nplan: true\n"
+
+        path.write_text(f"---\n{front}\n---\n{rest}", encoding="utf-8")
+    else:
+        path.write_text(f"---\nplan: true\n---\n{text}", encoding="utf-8")
+
+
+def _collect_tasks(files: list[str], target_resolved: str) -> tuple[list[str], dict]:
+    """Collect open/partial tasks from files, skipping the target file.
+
+    Returns (tasks_to_add, files_to_rewrite).
+    """
     tasks_to_add = []
-    files_to_rewrite = {}  # file_path -> (original_lines, indices_to_remove)
+    files_to_rewrite = {}
 
     for file_path in files:
         path = Path(file_path)
         if not path.exists():
             continue
-        if str(path.resolve()) == today_resolved:
+        if str(path.resolve()) == target_resolved:
             continue
 
         with open(path, 'r', encoding='utf-8') as f:
@@ -81,16 +114,15 @@ def cmd_plan(files: list[str]) -> None:
         if lines_to_remove:
             files_to_rewrite[file_path] = (lines, lines_to_remove)
 
-    if not tasks_to_add:
-        print("No tasks to plan for today")
-        return
+    return tasks_to_add, files_to_rewrite
 
-    # Append tasks to today's file
-    with open(today_path, 'a', encoding='utf-8') as f:
-        for task in tasks_to_add:
+
+def _write_tasks(target_path: Path, tasks: list[str], files_to_rewrite: dict) -> None:
+    """Append tasks to target file and remove moved tasks from source files."""
+    with open(target_path, 'a', encoding='utf-8') as f:
+        for task in tasks:
             f.write(task + '\n')
 
-    # Remove moved tasks from source files (atomic writes)
     for file_path, (lines, remove_indices) in files_to_rewrite.items():
         remove_set = set(remove_indices)
         new_lines = [line for idx, line in enumerate(lines) if idx not in remove_set]
@@ -101,19 +133,49 @@ def cmd_plan(files: list[str]) -> None:
             f.writelines(new_lines)
         tmp_path.replace(path)
 
-    print(f"\U0001f4cb Planned {len(tasks_to_add)} task(s) for today ({today_path.name})")
 
-    # Append suggested plan from estimate_today.prompt (includes calendar events)
+def cmd_plan(files: list[str]) -> None:
+    """Move open tasks and copy partial tasks into today's (or tomorrow's) file, then open editor."""
+    diary = DiaryDate()
+    now = datetime.now()
+    today_path = diary.filepath(now, create=True)
+
+    # If today already has a plan, target tomorrow instead
+    planning_tomorrow = has_plan(today_path)
+    if planning_tomorrow:
+        target_path = diary.filepath(now + timedelta(days=1), create=True)
+        estimate_cmd = "estimate_tomorrow.prompt"
+        label = "tomorrow"
+    else:
+        target_path = today_path
+        estimate_cmd = "estimate_today.prompt"
+        label = "today"
+
+    target_resolved = str(target_path.resolve())
+
+    tasks_to_add, files_to_rewrite = _collect_tasks(files, target_resolved)
+
+    if not tasks_to_add:
+        print(f"No tasks to plan for {label}")
+        return
+
+    _write_tasks(target_path, tasks_to_add, files_to_rewrite)
+
+    print(f"\U0001f4cb Planned {len(tasks_to_add)} task(s) for {label} ({target_path.name})")
+
+    set_frontmatter_plan(target_path)
+
+    # Append suggested plan from estimate prompt
     result = subprocess.run(
-        ["estimate_today.prompt"],
+        [estimate_cmd],
         capture_output=True, text=True,
     )
     if result.returncode == 0 and result.stdout.strip():
-        with open(today_path, 'a', encoding='utf-8') as f:
+        with open(target_path, 'a', encoding='utf-8') as f:
             f.write('\n# suggested plan\n')
             f.write(result.stdout)
     else:
-        print("No suggested plan (or estimate_today.prompt failed)")
+        print(f"No suggested plan (or {estimate_cmd} failed)")
 
-    # Open today's file in editor
-    subprocess.run("today | todo edit", shell=True)
+    # Open target file in editor
+    subprocess.run(f"echo {target_path} | todo edit", shell=True)

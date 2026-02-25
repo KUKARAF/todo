@@ -272,6 +272,11 @@ def cmd_done_direct(file_path: str, line_number: str) -> None:
 
 
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] in ('--version', '-V'):
+        from importlib.metadata import version
+        print(f"todo {version('todo')}")
+        return
+
     command, files = parse_args()
 
     if command == 'get':
