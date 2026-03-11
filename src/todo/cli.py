@@ -9,13 +9,14 @@ Usage:
     todo add "task text #tag @location"       # Add new todo (uses today's file by default)
     todo add "task due:tomorrow #tag"         # Add todo with custom due date
     todo done path/to/file.md 42              # Directly mark line 42 in file as done
+    todo postpone                             # Interactive (fzf) move todo to another day
 """
 
 import sys
 import subprocess
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from todo import Todo
 from today import DiaryDate
@@ -40,13 +41,14 @@ def parse_args() -> tuple[str, list[str]]:
         print("       todo add <text>", file=sys.stderr)
         print("       todo done [<file_path> <line_number>]", file=sys.stderr)
         print("       todo plan", file=sys.stderr)
-        print("Commands: get, show, edit, add, done, plan", file=sys.stderr)
+        print("       todo postpone", file=sys.stderr)
+        print("Commands: get, show, edit, add, done, plan, postpone", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1].lower()
 
     # 'add', 'done', and 'plan' don't require stdin
-    if command in ('add', 'done', 'plan'):
+    if command in ('add', 'done', 'plan', 'postpone'):
         if command == 'add' and len(sys.argv) < 3:
             print("Usage: todo add <text>", file=sys.stderr)
             sys.exit(1)
@@ -257,6 +259,133 @@ def cmd_done_interactive(files: list[str]) -> None:
     cmd_show(files)
 
 
+def cmd_postpone() -> None:
+    """Interactive (fzf) postpone a todo to another day."""
+    diary = DiaryDate()
+    today = datetime.now()
+    today_file = diary.filepath(today)
+
+    if not today_file.exists():
+        print("No diary file for today")
+        return
+
+    todo = Todo([str(today_file)])
+    all_todos = todo.get_all()
+    if not all_todos:
+        print("No open todos for today")
+        return
+
+    # Build display list for first fzf (pick a todo)
+    id_map = {}
+    display_lines = []
+    for tid, item in all_todos.items():
+        id_map[tid] = item
+        text = item["text"].strip().replace("- [ ]", "").replace("* [ ]", "").strip()
+        display = f"{tid:>4} {text[:80]}"
+        display_lines.append(display)
+
+    fzf_input = "\n".join(display_lines)
+    try:
+        result = subprocess.run(
+            ["fzf", "--preview", "echo {}", "--preview-window=up:1"],
+            input=fzf_input,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        return
+
+    selected = result.stdout.strip()
+    if not selected:
+        return
+
+    idx_str = selected.split()[0]
+    try:
+        todo_id = int(idx_str)
+    except ValueError:
+        return
+    if todo_id not in id_map:
+        return
+
+    item = id_map[todo_id]
+
+    # Build target day options: remaining days this week + "Next week" (Monday)
+    today_weekday = today.weekday()  # 0=Monday
+    day_options = []
+    # Remaining days this week (tomorrow through Sunday)
+    for offset in range(1, 7 - today_weekday):
+        dt = today + timedelta(days=offset)
+        day_options.append((f"{dt.strftime('%A'):<10} {dt.strftime('%Y-%m-%d')}", dt))
+    # Next week = next Monday
+    next_monday = today + timedelta(days=7 - today_weekday)
+    day_options.append((f"{'Next week':<10} {next_monday.strftime('%Y-%m-%d')}", next_monday))
+
+    day_lines = [label for label, _ in day_options]
+
+    fzf_input_days = "\n".join(day_lines)
+    try:
+        result = subprocess.run(
+            ["fzf", "--preview", "echo {}", "--preview-window=up:1"],
+            input=fzf_input_days,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        return
+
+    selected_day = result.stdout.strip()
+    if not selected_day:
+        return
+
+    # Parse selected date
+    date_str = selected_day.split()[-1]
+    target_dt = datetime.strptime(date_str, "%Y-%m-%d")
+    target_file = diary.filepath(target_dt, create=True)
+
+    # Remove the task + subtasks from today's file
+    with open(today_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    line_idx = item["line_number"] - 1
+    task_line = lines[line_idx]
+    task_indent = len(task_line) - len(task_line.lstrip("\t"))
+
+    # Collect the task + all deeper-indented subtasks below it
+    block = [lines[line_idx]]
+    end_idx = line_idx + 1
+    while end_idx < len(lines):
+        line = lines[end_idx]
+        if line.strip() == "":
+            break
+        line_indent = len(line) - len(line.lstrip("\t"))
+        if line_indent > task_indent:
+            block.append(line)
+            end_idx += 1
+        else:
+            break
+
+    remaining = lines[:line_idx] + lines[end_idx:]
+
+    tmp_path = today_file.with_suffix(today_file.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.writelines(remaining)
+    tmp_path.replace(today_file)
+
+    # Append block to target file
+    with open(target_file, "a", encoding="utf-8") as f:
+        for line in block:
+            f.write(line if line.endswith("\n") else line + "\n")
+
+    text = block[0].strip().replace("- [ ]", "").replace("* [ ]", "").strip()
+    subtask_count = len(block) - 1
+    msg = f"Postponed to {target_file.name}: {text}"
+    if subtask_count:
+        msg += f" + {subtask_count} subtask(s)"
+    print(msg)
+
+
 def cmd_done_direct(file_path: str, line_number: str) -> None:
     """Mark a specific todo line as done"""
     files = [file_path]
@@ -299,6 +428,8 @@ def main():
                 print("Error: No files available for interactive done", file=sys.stderr)
                 sys.exit(1)
             cmd_done_interactive(files_interactive)
+    elif command == 'postpone':
+        cmd_postpone()
     elif command == 'plan':
         if not sys.stdin.isatty():
             plan_files = read_files_from_stdin()
@@ -310,7 +441,7 @@ def main():
         cmd_plan(plan_files)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Commands: get, show, edit, add, done, plan", file=sys.stderr)
+        print("Commands: get, show, edit, add, done, plan, postpone", file=sys.stderr)
         sys.exit(1)
 
 
