@@ -275,14 +275,21 @@ def cmd_postpone() -> None:
         print("No open todos for today")
         return
 
-    # Build display list for first fzf (pick a todo)
+    # Build display list for first fzf (pick a todo) — top-level tasks only
     id_map = {}
     display_lines = []
     for tid, item in all_todos.items():
+        # Skip subtasks (indented items)
+        if item["text"] != item["text"].lstrip("\t"):
+            continue
         id_map[tid] = item
         text = item["text"].strip().replace("- [ ]", "").replace("* [ ]", "").strip()
         display = f"{tid:>4} {text[:80]}"
         display_lines.append(display)
+
+    if not display_lines:
+        print("No open todos for today")
+        return
 
     fzf_input = "\n".join(display_lines)
     try:
@@ -373,9 +380,11 @@ def cmd_postpone() -> None:
         f.writelines(remaining)
     tmp_path.replace(today_file)
 
-    # Append block to target file
+    # Append block to target file (dedented to root level)
     with open(target_file, "a", encoding="utf-8") as f:
         for line in block:
+            if task_indent > 0 and line[:task_indent] == "\t" * task_indent:
+                line = line[task_indent:]
             f.write(line if line.endswith("\n") else line + "\n")
 
     text = block[0].strip().replace("- [ ]", "").replace("* [ ]", "").strip()

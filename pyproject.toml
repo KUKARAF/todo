@@ -1,6 +1,6 @@
 [project]
 name = "todo"
-version = "0.1.6"
+version = "0.1.7"
 requires-python = ">=3.11"
 dependencies = [
     "today @ git+https://github.com/KUKARAF/diary.git",
