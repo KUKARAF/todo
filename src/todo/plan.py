@@ -4,7 +4,7 @@ Plan command: consolidate incomplete tasks into today's file.
 Usage:
     diary | todo plan       # Plan from today's file(s)
     diary week | todo plan  # Plan from this week's files
-    todo plan               # Default: plan from last 3 days
+    todo plan               # Default: plan from yesterday to last Monday
 """
 
 import sys
@@ -16,11 +16,13 @@ from today import DiaryDate
 
 
 def get_default_files() -> list[str]:
-    """Get diary files for the last 3 days (excluding today)."""
+    """Get diary files from yesterday back to last Monday (inclusive)."""
     diary = DiaryDate()
     files = []
     now = datetime.now()
-    for days_ago in range(1, 4):
+    # weekday(): Monday=0 ... Sunday=6
+    days_back = now.weekday() + 7  # days to reach last Monday
+    for days_ago in range(1, days_back + 1):
         dt = now - timedelta(days=days_ago)
         path = diary.filepath(dt)
         if path.exists():
