@@ -10,6 +10,7 @@ Usage:
     todo add "task due:tomorrow #tag"         # Add todo with custom due date
     todo done path/to/file.md 42              # Directly mark line 42 in file as done
     todo postpone                             # Interactive (fzf) move todo to another day
+    todo send                                 # Push top-7 todos to HA epaper helpers
 """
 
 import sys
@@ -22,6 +23,7 @@ from todo import Todo
 from today import DiaryDate
 from todo.plan import cmd_plan, get_default_files
 from todo.defaults import default_files
+from todo.epaper import EPaper
 
 
 def read_files_from_stdin() -> list[str]:
@@ -42,13 +44,13 @@ def parse_args() -> tuple[str, list[str]]:
         print("       todo done [<file_path> <line_number>]", file=sys.stderr)
         print("       todo plan", file=sys.stderr)
         print("       todo postpone", file=sys.stderr)
-        print("Commands: get, show, edit, add, done, plan, postpone", file=sys.stderr)
+        print("Commands: get, show, edit, add, done, plan, postpone, send", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1].lower()
 
     # 'add', 'done', and 'plan' don't require stdin
-    if command in ('add', 'done', 'plan', 'postpone'):
+    if command in ('add', 'done', 'plan', 'postpone', 'send'):
         if command == 'add' and len(sys.argv) < 3:
             print("Usage: todo add <text>", file=sys.stderr)
             sys.exit(1)
@@ -205,6 +207,41 @@ def cmd_add(task_text: str) -> None:
 
     print(f"\u2705 Added to {target_file.name}")
     print(f"   - [ ] {cleaned_text}")
+
+
+def cmd_send(files: list[str]) -> None:
+    """Push the first 7 top-level (non-indented) todos to HA epaper helpers."""
+    todo = Todo(files)
+    all_todos = todo.get_all()
+
+    top_level = []
+    for item in all_todos.values():
+        # Skip indented subtasks
+        if item["text"] != item["text"].lstrip("\t"):
+            continue
+        text = item["text"].strip()
+        text = re.sub(r'^[-*]\s+\[\s*\]\s*', '', text)   # remove checkbox
+        text = re.sub(r'\s+due:\S+', '', text)            # remove due:...
+        text = re.sub(r'\s+#\w+', '', text)               # remove #tags
+        text = re.sub(r'\s+@[\w\s]+', '', text).strip()   # remove @locations
+        if text:
+            top_level.append(text)
+        if len(top_level) == 7:
+            break
+
+    if not top_level:
+        print("No todos found to send")
+        return
+
+    print(f"Sending {len(top_level)} todo(s) to Home Assistant...")
+    try:
+        EPaper().send(top_level)
+    except ValueError as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"HA error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_done_interactive(files: list[str]) -> None:
@@ -439,6 +476,12 @@ def main():
             cmd_done_interactive(files_interactive)
     elif command == 'postpone':
         cmd_postpone()
+    elif command == 'send':
+        send_files = files or default_files('get')
+        if not send_files:
+            print("Error: No files available", file=sys.stderr)
+            sys.exit(1)
+        cmd_send(send_files)
     elif command == 'plan':
         if not sys.stdin.isatty():
             plan_files = read_files_from_stdin()
@@ -450,7 +493,7 @@ def main():
         cmd_plan(plan_files)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        print("Commands: get, show, edit, add, done, plan, postpone", file=sys.stderr)
+        print("Commands: get, show, edit, add, done, plan, postpone, send", file=sys.stderr)
         sys.exit(1)
 
 
