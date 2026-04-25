@@ -210,12 +210,15 @@ def cmd_add(task_text: str) -> None:
 
 
 def cmd_send(files: list[str]) -> None:
-    """Push the first 7 top-level (non-indented) todos to HA epaper helpers."""
+    """Push the first 7 top-level (non-done, non-indented) todos to HA epaper helpers."""
     todo = Todo(files)
     all_todos = todo.get_all()
 
     top_level = []
     for item in all_todos.values():
+        # Skip done items (belt-and-suspenders: get_all() already excludes [x])
+        if re.search(r'\[[xX]\]', item["text"]):
+            continue
         # Skip indented subtasks
         if item["text"] != item["text"].lstrip("\t"):
             continue
@@ -229,11 +232,7 @@ def cmd_send(files: list[str]) -> None:
         if len(top_level) == 7:
             break
 
-    if not top_level:
-        print("No todos found to send")
-        return
-
-    print(f"Sending {len(top_level)} todo(s) to Home Assistant...")
+    print(f"Sending {len(top_level)} todo(s) to Home Assistant (remaining slots will be cleared)...")
     try:
         EPaper().send(top_level)
     except ValueError as e:
