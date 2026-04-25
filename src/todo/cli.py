@@ -293,6 +293,7 @@ def cmd_done_interactive(files: list[str]) -> None:
 
     # Show remaining todos after marking done
     cmd_show(files)
+    cmd_send(files)
 
 
 def cmd_postpone() -> None:
@@ -440,6 +441,7 @@ def cmd_done_direct(file_path: str, line_number: str) -> None:
         print(f"\u2705 Marked line {line_number} in {Path(file_path).name} as done")
         # Show remaining todos from this file
         cmd_show(files)
+        cmd_send(files)
     except Exception as e:
         print(f"Error marking done: {e}", file=sys.stderr)
         sys.exit(1)
