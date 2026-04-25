@@ -209,9 +209,10 @@ def cmd_add(task_text: str) -> None:
     print(f"   - [ ] {cleaned_text}")
 
 
-def cmd_send(files: list[str]) -> None:
-    """Push the first 7 top-level (non-done, non-indented) todos to HA epaper helpers."""
-    todo = Todo(files)
+def cmd_send(_files: list[str] = None) -> None:
+    """Push the first 7 top-level (non-done, non-indented) todos from today to HA epaper helpers."""
+    today_file = str(DiaryDate().filepath(datetime.now()))
+    todo = Todo([today_file])
     all_todos = todo.get_all()
 
     top_level = []
@@ -478,11 +479,7 @@ def main():
     elif command == 'postpone':
         cmd_postpone()
     elif command == 'send':
-        send_files = files or default_files('get')
-        if not send_files:
-            print("Error: No files available", file=sys.stderr)
-            sys.exit(1)
-        cmd_send(send_files)
+        cmd_send()
     elif command == 'plan':
         if not sys.stdin.isatty():
             plan_files = read_files_from_stdin()
