@@ -18,6 +18,7 @@ import subprocess
 import os
 import re
 from datetime import datetime, timedelta
+from importlib.metadata import version
 from pathlib import Path
 from todo import Todo
 from today import DiaryDate
@@ -192,7 +193,7 @@ def cmd_add(task_text: str) -> None:
         try:
             due_date = diary.parse(due_str)
             target_file = diary.filepath(due_date, create=True)
-        except Exception as e:
+        except (ValueError, OSError) as e:
             print(f"Error parsing due date: {e}", file=sys.stderr)
             sys.exit(1)
     else:
@@ -238,9 +239,6 @@ def cmd_send(_files: list[str] = None) -> None:
         EPaper().send(top_level)
     except ValueError as e:
         print(f"Config error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except RuntimeError as e:
-        print(f"HA error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -443,14 +441,13 @@ def cmd_done_direct(file_path: str, line_number: str) -> None:
         # Show remaining todos from this file
         cmd_show(files)
         cmd_send(files)
-    except Exception as e:
+    except (ValueError, OSError) as e:
         print(f"Error marking done: {e}", file=sys.stderr)
         sys.exit(1)
 
 
 def main():
     if len(sys.argv) == 2 and sys.argv[1] in ('--version', '-V'):
-        from importlib.metadata import version
         print(f"todo {version('todo')}")
         return
 

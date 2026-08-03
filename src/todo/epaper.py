@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 
@@ -7,6 +8,8 @@ HA_URL = "https://casa.osmosis.page"
 HA_HELPER_PREFIX = "input_text.epaper_todo_"
 MAX_TODOS = 7
 MAX_TEXT_LEN = 255
+HA_TIMEOUT_SECONDS = 0.3
+
 
 
 class EPaper:
@@ -30,9 +33,12 @@ class EPaper:
         """
         for i in range(1, MAX_TODOS + 1):
             text = todos[i - 1][:MAX_TEXT_LEN] if i - 1 < len(todos) else ""
-            self._set_helper(i, text)
-            status = "ok" if text else "cleared"
-            print(f"  {HA_HELPER_PREFIX}{i} -> {repr(text)} [{status}]")
+            try:
+                self._set_helper(i, text)
+                status = "ok" if text else "cleared"
+                print(f"  {HA_HELPER_PREFIX}{i} -> {repr(text)} [{status}]")
+            except RuntimeError as e:
+                print(f"  warning: skipping {HA_HELPER_PREFIX}{i} — {e}", file=sys.stderr)
 
     def _set_helper(self, n: int, text: str) -> None:
         entity_id = f"{HA_HELPER_PREFIX}{n}"
@@ -48,8 +54,10 @@ class EPaper:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=HA_TIMEOUT_SECONDS) as resp:
                 if resp.status not in (200, 201):
                     raise RuntimeError(f"HA returned HTTP {resp.status} for {entity_id}")
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"HA error for {entity_id}: {e.code} {e.reason}") from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"HA unreachable for {entity_id}: {e.reason}") from e
