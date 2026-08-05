@@ -147,6 +147,23 @@ def _write_tasks(target_path: Path, tasks: list[str], files_to_rewrite: dict) ->
         tmp_path.replace(path)
 
 
+def extract_final_plan(output: str) -> str | None:
+    """Keep only the final plan from prompt output.
+
+    The estimate prompt's tool loop echoes the model's intermediate
+    narration to stdout; only the block starting at the last '# todo'
+    heading is the actual plan. Returns None if no such heading exists.
+    """
+    lines = output.splitlines()
+    last_idx = None
+    for idx, line in enumerate(lines):
+        if re.match(r'^#\s*todo\s*$', line, re.IGNORECASE):
+            last_idx = idx
+    if last_idx is None:
+        return None
+    return '\n'.join(lines[last_idx:]).strip() + '\n'
+
+
 def cmd_plan(files: list[str]) -> None:
     """Move open tasks and copy partial tasks into today's (or tomorrow's) file, then open editor."""
     diary = DiaryDate()
@@ -188,9 +205,13 @@ def cmd_plan(files: list[str]) -> None:
             text=True,
         )
     if result.returncode == 0 and result.stdout.strip():
+        plan_text = extract_final_plan(result.stdout)
+        if plan_text is None:
+            print("⚠️  No '# todo' heading in prompt output; appending raw output")
+            plan_text = result.stdout
         with open(target_path, 'a', encoding='utf-8') as f:
             f.write('\n# suggested plan\n')
-            f.write(result.stdout)
+            f.write(plan_text)
     else:
         print(f"No suggested plan (or {estimate_cmd} failed)")
 
